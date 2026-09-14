@@ -194,6 +194,7 @@ export function computeStats(shift: ShiftState, now: number): ShiftStats {
 
 export function fmtRate(value: number) {
   if (!Number.isFinite(value)) return '—'
+  if (value === 0) return '0'
   return value >= 100 ? value.toFixed(0) : value.toFixed(1)
 }
 
@@ -219,4 +220,12 @@ export function fmtShort(totalSeconds: number) {
 export function fmtHours(totalSeconds: number) {
   const hours = totalSeconds / 3600
   return `${hours.toFixed(1)} h`
+}
+
+/** HH:MM sin segundos, para resúmenes e historial. */
+export function fmtHM(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }

@@ -1,144 +1,54 @@
 'use client'
-
-import { fmtRate, fmtShort, fmtSoles, type ShiftStats } from '@/lib/shift'
+import { XCircle } from 'lucide-react'
+import { fmtRate, fmtShort, fmtSoles, segmentSeconds, type ShiftStats } from '@/lib/shift'
 import { cn } from '@/lib/utils'
-
-interface HeroSignalProps {
-  stats: ShiftStats
-  goal: number
+interface HeroSignalProps { stats: ShiftStats; goal: number; onCancelTrip?: () => void }
+const TONE: Record<string, { text: string; glow: string; ring: string; bg: string; label: string }> = {
+  idle: { text: 'text-muted-foreground', glow: '', ring: 'border-border', bg: 'bg-muted/40', label: 'LISTO' },
+  wait: { text: 'text-primary', glow: 'glow-primary', ring: 'border-primary/40', bg: 'bg-primary/10', label: 'BUSCANDO CARRERA' },
+  losing: { text: 'text-primary', glow: 'glow-primary', ring: 'border-primary/40', bg: 'bg-primary/10', label: 'BUSCANDO CARRERA' },
+  trip: { text: 'text-[#c084fc]', glow: 'glow-purple', ring: 'border-[#c084fc]/40', bg: 'bg-[#c084fc]/10', label: 'EN VIAJE' },
+  paused: { text: 'text-warning', glow: 'glow-warning', ring: 'border-warning/40', bg: 'bg-warning/10', label: 'EN PAUSA' },
+  ended: { text: 'text-muted-foreground', glow: '', ring: 'border-border', bg: 'bg-muted/40', label: 'TERMINADO' },
 }
-
-const TONE = {
-  idle: {
-    text: 'text-muted-foreground',
-    glow: '',
-    ring: 'border-border',
-    bg: 'bg-card',
-    label: 'META DE HOY',
-  },
-  wait: {
-    text: 'text-wait',
-    glow: 'glow-wait',
-    ring: 'border-wait/40',
-    bg: 'bg-wait/10',
-    label: 'BUSCANDO CARRERA',
-  },
-  trip: {
-    text: 'text-primary',
-    glow: 'glow-primary',
-    ring: 'border-primary/50',
-    bg: 'bg-primary/12',
-    label: 'EN VIAJE · GENERANDO',
-  },
-  losing: {
-    text: 'text-destructive',
-    glow: 'glow-destructive',
-    ring: 'border-destructive/45',
-    bg: 'bg-destructive/8',
-    label: 'PERDIENDO PLATA',
-  },
-  paused: {
-    text: 'text-muted-foreground',
-    glow: '',
-    ring: 'border-border',
-    bg: 'bg-muted/40',
-    label: 'EN PAUSA',
-  },
-  ended: {
-    text: 'text-foreground',
-    glow: '',
-    ring: 'border-border',
-    bg: 'bg-card',
-    label: 'TURNO CERRADO',
-  },
-} as const
-
-export function HeroSignal({ stats, goal }: HeroSignalProps) {
-  const tone = TONE[stats.mood]
+export function HeroSignal({ stats, goal, onCancelTrip }: HeroSignalProps) {
+  const tone = TONE[stats.mood] ?? TONE.idle
   const kind = stats.current?.kind
-
-  // El número estrella cambia de significado según el contexto del turno.
-  let star = fmtSoles(goal, 0)
-  let sub = 'Aún no arrancas'
-
-  if (stats.mood === 'ended') {
-    star = fmtSoles(stats.net, 0)
-    sub = 'Neto del turno'
-  } else if (kind === 'trip') {
-    star = fmtShort(stats.currentSeconds)
-    sub = 'Duración de esta carrera'
-  } else if (kind === 'pause') {
-    star = fmtShort(stats.currentSeconds)
-    sub = 'Tiempo en pausa'
-  } else if (kind === 'wait') {
-    star = fmtShort(stats.currentSeconds)
-    sub = `${fmtSoles(stats.burned)} quemados esperando`
-  }
-
+  const seg = stats.current; const elapsed = seg ? segmentSeconds(seg, Date.now()) : 0
   return (
-    <section
-      aria-label="Señal de urgencia"
-      className={cn(
-        'flex flex-col gap-4 rounded-2xl border p-5 transition-colors duration-500',
-        tone.ring,
-        tone.bg,
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            'size-2 rounded-full bg-current',
-            tone.text,
-            stats.mood === 'losing' && 'animate-pulse',
-          )}
-          aria-hidden="true"
-        />
-        <span className={cn('font-mono text-sm font-bold tracking-[0.16em]', tone.text)}>
-          {tone.label}
-        </span>
+    <section className={cn('flex flex-col gap-4 rounded-2xl border p-5', tone.ring, tone.bg)}>
+      <div className="flex flex-col gap-2">
+        <span className={cn('font-mono text-xs font-semibold tracking-[0.18em]', tone.text)}>● {tone.label}</span>
+        <div className={cn('font-mono text-5xl font-semibold tabular-nums leading-none', tone.text, tone.glow)}>
+          {fmtShort(elapsed)}</div>
+        <p className="font-mono text-sm text-muted-foreground">
+          {kind === 'trip' ? `${fmtSoles((elapsed / 3600) * stats.rate)} quemados en viaje`
+            : kind === 'pause' ? 'Tiempo en pausa'
+            : `${fmtSoles(stats.burned)} quemados esperando`}</p>
       </div>
-
+      <hr className="border-border" />
       <div className="flex flex-col gap-1">
-        <p
-          className={cn(
-            'lcd font-mono text-6xl leading-none font-semibold tabular-nums',
-            tone.text,
-            tone.glow,
-          )}
-        >
-          {star}
-        </p>
-        <p className="font-mono text-base tracking-wide text-muted-foreground">{sub}</p>
+        <p className="text-lg font-semibold text-foreground leading-snug">{stats.message}</p>
+        <p className="text-sm text-muted-foreground">{stats.hint}</p>
       </div>
-
-      <div className="flex flex-col gap-1.5 border-t border-border pt-4">
-        <p className="text-xl leading-relaxed font-semibold text-foreground text-pretty">
-          {stats.message}
-        </p>
-        <p className="text-base leading-relaxed text-muted-foreground text-pretty">{stats.hint}</p>
-      </div>
-
-      <dl className="flex items-stretch gap-3">
-        <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-background/60 px-3 py-3">
-          <dt className="font-mono text-xs tracking-[0.16em] text-muted-foreground">TU RITMO</dt>
-          <dd
-            className={cn(
-              'font-mono text-3xl font-semibold tabular-nums',
-              stats.onPace ? 'text-primary' : 'text-destructive',
-            )}
-          >
-            {fmtRate(stats.rate)}
-            <span className="text-sm font-normal text-muted-foreground"> S//h</span>
-          </dd>
+      <dl className="grid grid-cols-2 gap-3">
+        <div className={cn('flex flex-col gap-1 rounded-xl p-3', tone.bg)}>
+          <dt className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground">TU RITMO</dt>
+          <dd className={cn('font-mono text-3xl font-semibold tabular-nums', stats.rate > 0 ? 'text-primary' : 'text-destructive')}>
+            {fmtRate(stats.rate)}</dd>
+          <dd className="font-mono text-xs text-muted-foreground">S//h</dd>
         </div>
-        <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-background/60 px-3 py-3">
-          <dt className="font-mono text-xs tracking-[0.16em] text-muted-foreground">NECESITAS</dt>
-          <dd className="font-mono text-3xl font-semibold tabular-nums text-foreground">
-            {fmtRate(stats.neededRate)}
-            <span className="text-sm font-normal text-muted-foreground"> S//h</span>
-          </dd>
+        <div className={cn('flex flex-col gap-1 rounded-xl p-3', tone.bg)}>
+          <dt className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground">NECESITAS</dt>
+          <dd className="font-mono text-3xl font-semibold tabular-nums text-foreground">{fmtRate(stats.neededRate)}</dd>
+          <dd className="font-mono text-xs text-muted-foreground">S//h</dd>
         </div>
       </dl>
+      {kind === 'trip' && onCancelTrip ? (
+        <button type="button" onClick={onCancelTrip}
+          className="flex items-center justify-center gap-2 rounded-xl border border-destructive/30 py-3 text-sm font-medium text-destructive hover:bg-destructive/10">
+          <XCircle className="size-4" /> El cliente canceló</button>
+      ) : null}
     </section>
   )
 }

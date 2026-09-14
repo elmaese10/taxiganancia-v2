@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { IBM_Plex_Mono, Inter } from 'next/font/google'
+import Script from 'next/script'
 import './globals.css'
 
 const inter = Inter({
@@ -21,6 +22,16 @@ export const metadata: Metadata = {
   description:
     'Asistente en vivo para taxistas en Lima: mide tu espera, lo que cuesta y cuánto te falta para la meta del día.',
   generator: 'v0.app',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'TaxiGanancia',
+  },
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
 }
 
 export const viewport: Viewport = {
@@ -42,6 +53,22 @@ export default function RootLayout({
       <body className="bg-background font-sans antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/* Registro del Service Worker para comportarse como app real */}
+        <Script
+          id="sw-registration"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                    console.log('SW error:', err);
+                  });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   )

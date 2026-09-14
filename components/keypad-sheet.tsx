@@ -12,6 +12,8 @@ interface KeypadSheetProps {
   title: string
   subtitle: string
   labels?: readonly string[]
+  initialValue?: string
+  submitLabel?: string
   onClose: () => void
   onSubmit: (amount: number, label?: string) => void
 }
@@ -23,6 +25,8 @@ export function KeypadSheet({
   title,
   subtitle,
   labels = EXPENSE_LABELS,
+  initialValue = '',
+  submitLabel,
   onClose,
   onSubmit,
 }: KeypadSheetProps) {
@@ -33,7 +37,7 @@ export function KeypadSheet({
 
   useEffect(() => {
     if (mode) {
-      setValue('')
+      setValue(initialValue)
       setLabel(labels[0] ?? EXPENSE_LABELS[0])
       setCustomLabel('')
       setAddingLabel(false)
@@ -167,7 +171,7 @@ export function KeypadSheet({
               : 'bg-warning text-warning-foreground',
           )}
         >
-          {mode === 'trip' ? 'Cerrar carrera' : 'Registrar gasto'}
+          {submitLabel ?? (mode === 'trip' ? 'Cerrar carrera' : 'Registrar gasto')}
         </button>
       </div>
     </div>
