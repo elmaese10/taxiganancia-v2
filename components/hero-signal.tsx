@@ -1,6 +1,6 @@
 'use client'
 import { XCircle } from 'lucide-react'
-import { fmtRate, fmtShort, fmtSoles, segmentSeconds, type ShiftStats } from '@/lib/shift'
+import { fmtHM, fmtRate, fmtShort, fmtSoles, segmentSeconds, type ShiftStats } from '@/lib/shift'
 import { cn } from '@/lib/utils'
 interface HeroSignalProps { stats: ShiftStats; goal: number; onCancelTrip?: () => void }
 const TONE: Record<string, { text: string; glow: string; ring: string; bg: string; label: string }> = {
@@ -20,7 +20,7 @@ export function HeroSignal({ stats, goal, onCancelTrip }: HeroSignalProps) {
       <div className="flex flex-col gap-2">
         <span className={cn('font-mono text-xs font-semibold tracking-[0.18em]', tone.text)}>● {tone.label}</span>
         <div className={cn('font-mono text-5xl font-semibold tabular-nums leading-none', tone.text, tone.glow)}>
-          {fmtShort(elapsed)}</div>
+          {kind === 'pause' && elapsed >= 3600 ? fmtHM(elapsed) : fmtShort(elapsed)}</div>
         <p className="font-mono text-sm text-muted-foreground">
           {kind === 'trip' ? `${fmtSoles((elapsed / 3600) * stats.rate)} quemados en viaje`
             : kind === 'pause' ? 'Tiempo en pausa'

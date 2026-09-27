@@ -116,7 +116,7 @@ export function computeStats(shift: ShiftState, now: number): ShiftStats {
   const tripSeconds = sumSeconds(segments, 'trip', clock)
   const waitSeconds = sumSeconds(segments, 'wait', clock)
   const pauseSeconds = sumSeconds(segments, 'pause', clock)
-  const elapsedSeconds = startedAt ? Math.max(0, (clock - startedAt) / 1000) : 0
+  const elapsedSeconds = tripSeconds + waitSeconds
   const workedSeconds = tripSeconds + waitSeconds
 
   const trips = segments.filter((s) => s.kind === 'trip' && s.end !== null)

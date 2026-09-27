@@ -25,442 +25,213 @@ import {
   type ShiftConfig,
   type ShiftState,
 } from '@/lib/shift'
-import {
-  appendClosedDay,
-  closedDayFromShift,
-  enablePersistence,
-  loadPersisted,
-  mergeExpenseLabels,
-  persistConfig,
-  persistHistory,
-  persistLabels,
-  persistShift,
-  type ClosedDay,
-} from '@/lib/storage'
+import { type ClosedDay, enablePersistence, loadPersisted, persistShift, closedDayFromShift, appendClosedDay } from '@/lib/storage'
 
-const AUTOSAVE_MS = 4000
-
-export default function Page() {
+export default function Home() {
   const [shift, setShift] = useState<ShiftState>(initialShift)
-  const [now, setNow] = useState<number | null>(null)
+  const [now, setNow] = useState<number>(0)
   const [keypad, setKeypad] = useState<KeypadMode | null>(null)
   const [planOpen, setPlanOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<ClosedDay[]>([])
+  const [gpsConfig, setGpsConfig] = useState<GPSConfig | null>(null)
+  const [gpsSetupOpen, setGpsSetupOpen] = useState(false)
+  const [view, setView] = useState<'gps' | 'shift'>('gps')
   const [tripMenu, setTripMenu] = useState<{ trip: Segment; index: number } | null>(null)
   const [editingTripId, setEditingTripId] = useState<string | null>(null)
   const [keypadInitial, setKeypadInitial] = useState('')
   const [expenseLabels, setExpenseLabels] = useState<string[]>([...EXPENSE_LABELS])
-  const [history, setHistory] = useState<ClosedDay[]>([])
-  const [gpsConfig, setGpsConfig] = useState<GPSConfig | null>(null)
-  const [gpsSetupOpen, setGpsSetupOpen] = useState(false)
-  /** 'gps' = pantalla principal GPS, 'shift' = modo turno */
-  const [view, setView] = useState<'gps' | 'shift'>('gps')
 
-  const shiftRef = useRef(shift)
-  const historyRef = useRef(history)
-  const labelsRef = useRef(expenseLabels)
-  shiftRef.current = shift
-  historyRef.current = history
-  labelsRef.current = expenseLabels
-
+  const loadedRef = useRef(false)
   useLayoutEffect(() => {
-    let live = true
-    void loadPersisted().then((persisted) => {
-      if (!live) return
-      setShift(persisted.shift)
-      setExpenseLabels(persisted.labels)
-      setHistory(persisted.history)
-      setGpsConfig(loadGPS())
-      enablePersistence()
-      setNow(Date.now())
-      // Si hay turno activo, ir directo al modo turno
-      if (persisted.shift.status === 'running') {
-        setView('shift')
-      }
+    if (loadedRef.current) return; loadedRef.current = true
+    loadPersisted().then((persisted) => {
+      setShift(persisted.shift); setHistory(persisted.history); setGpsConfig(loadGPS())
+      enablePersistence(); setNow(Date.now())
+      if (persisted.shift.status === 'running') setView('shift')
     })
-    return () => {
-      live = false
-    }
   }, [])
 
   useEffect(() => {
-    if (shift.status !== 'running') return
+    if (!now) return
     const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [shift.status])
-
-  useEffect(() => {
-    if (now === null) return
-    enablePersistence()
-
-    const flush = () => {
-      persistShift(shiftRef.current)
-      persistConfig(shiftRef.current.config)
-      persistLabels(labelsRef.current)
-      persistHistory(historyRef.current)
-    }
-
-    const id = window.setInterval(flush, AUTOSAVE_MS)
-    const onHide = () => flush()
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') onHide()
-    }
-    window.addEventListener('pagehide', onHide)
-    window.addEventListener('beforeunload', onHide)
+    const onHide = () => persistShift(shift)
+    const onVisibility = () => { if (document.visibilityState === 'visible') setNow(Date.now()) }
+    window.addEventListener('pagehide', onHide); window.addEventListener('beforeunload', onHide)
     document.addEventListener('visibilitychange', onVisibility)
-
-    return () => {
-      window.clearInterval(id)
-      window.removeEventListener('pagehide', onHide)
-      window.removeEventListener('beforeunload', onHide)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
+    return () => { window.clearInterval(id); window.removeEventListener('pagehide', onHide); window.removeEventListener('beforeunload', onHide); document.removeEventListener('visibilitychange', onVisibility) }
   }, [now])
 
   const stats = useMemo(() => computeStats(shift, now ?? 0), [shift, now])
 
-  function handleSaveGPS(config: GPSConfig) {
-    setGpsConfig(config)
-    saveGPS(config)
-  }
+  function handleSaveGPS(config: GPSConfig) { setGpsConfig(config); saveGPS(config) }
 
   const commitShift = useCallback(
     (updater: (prev: ShiftState) => ShiftState, allowReset = false) => {
-      setShift((prev) => {
-        const next = updater(prev)
-        persistShift(next, { allowReset })
-        persistConfig(next.config)
-        shiftRef.current = next
-        return next
-      })
-    },
-    [],
+      setShift((prev) => { const next = updater(prev); persistShift(next, { allowReset }); return next })
+    }, [],
   )
 
-  const switchSegment = useCallback(
-    (kind: Segment['kind'], amount?: number) => {
-      const at = Date.now()
-      setNow(at)
-      commitShift((prev) => ({
-        ...prev,
-        segments: [
-          ...prev.segments.map((segment) =>
-            segment.end === null ? { ...segment, end: at, amount: amount ?? segment.amount } : segment,
-          ),
-          { id: uid(), kind, start: at, end: null },
-        ],
-      }))
-    },
-    [commitShift],
-  )
+  const saveConfig = useCallback((config: ShiftConfig) => {
+    commitShift((prev) => ({ ...prev, config }))
+  }, [commitShift])
 
-  const startShift = useCallback(() => {
-    const at = Date.now()
-    setNow(at)
+  const switchSegment = useCallback((kind: Segment['kind'], amount?: number) => {
+    const at = Date.now(); setNow(at)
     commitShift((prev) => ({
       ...prev,
-      status: 'running',
-      startedAt: at,
-      endedAt: null,
-      segments: [{ id: uid(), kind: 'wait', start: at, end: null }],
-      expenses: [],
+      segments: [
+        ...prev.segments.map((s) => s.end === null ? { ...s, end: at, amount: s.kind === 'trip' && amount !== undefined ? amount : s.amount } : s),
+        { id: uid(), kind, start: at, end: null },
+      ],
     }))
   }, [commitShift])
 
+  const startShift = useCallback(() => {
+    const at = Date.now(); setNow(at)
+    commitShift((prev) => ({ ...prev, status: 'running', startedAt: at, endedAt: null,
+      segments: [{ id: uid(), kind: 'wait', start: at, end: null }], expenses: [] }))
+  }, [commitShift])
+
   const endShift = useCallback(() => {
-    const at = Date.now()
-    setNow(at)
+    const at = Date.now(); setNow(at)
     commitShift((prev) => {
-      if (prev.status === 'ended') return prev
-      const next: ShiftState = {
-        ...prev,
-        status: 'ended',
-        endedAt: at,
-        segments: prev.segments.map((segment) =>
-          segment.end === null ? { ...segment, end: at } : segment,
-        ),
-      }
-      const nextHistory = appendClosedDay(historyRef.current, closedDayFromShift(next, at))
-      historyRef.current = nextHistory
-      persistHistory(nextHistory)
-      setHistory(nextHistory)
-      return next
+      const segments = prev.segments.map((s) => s.end === null ? { ...s, end: at } : s)
+      const ended = { ...prev, status: 'ended' as const, endedAt: at, segments }
+      const closed = closedDayFromShift(ended, at)
+      setHistory((h) => appendClosedDay(h, closed))
+      return ended
     })
   }, [commitShift])
+
+  const startNewShift = useCallback(() => {
+    commitShift(() => ({ ...initialShift }), true)
+  }, [commitShift])
+
+  /** Resetea el turno actual descartando todo sin guardar en historial. */
+  const resetShift = useCallback(() => {
+    const at = Date.now()
+    setNow(at)
+    commitShift(() => ({
+      ...initialShift,
+      status: 'running' as const,
+      startedAt: at,
+      segments: [{ id: uid(), kind: 'wait' as const, start: at, end: null }],
+      config: shift.config, // mantiene la configuración actual (meta, hora fin)
+    }), true)
+  }, [commitShift, shift.config])
 
   const togglePause = useCallback(() => {
     switchSegment(stats.current?.kind === 'pause' ? 'wait' : 'pause')
   }, [stats.current?.kind, switchSegment])
 
-  // El cliente canceló al llegar: el viaje en curso se descarta. El tiempo que
-  // manejaste yendo a recoger queda como espera, y arranca un tramo de espera nuevo.
   const cancelCurrentTrip = useCallback(() => {
-    const at = Date.now()
-    setNow(at)
+    const at = Date.now(); setNow(at)
     commitShift((prev) => ({
       ...prev,
       segments: [
-        ...prev.segments.map((s) =>
-          s.end === null && s.kind === 'trip'
-            ? { ...s, kind: 'wait' as const, end: at, amount: undefined }
-            : s,
-        ),
+        ...prev.segments.map((s) => s.end === null && s.kind === 'trip' ? { ...s, kind: 'wait' as const, end: at, amount: undefined } : s),
         { id: uid(), kind: 'wait', start: at, end: null },
       ],
-    }))
+    })); setTripMenu(null)
+  }, [commitShift])
+
+  const deleteTrip = useCallback((id: string) => {
+    commitShift((prev) => ({ ...prev, segments: prev.segments.map((s) => s.id === id ? { ...s, kind: 'wait' as const, amount: undefined } : s) }))
     setTripMenu(null)
   }, [commitShift])
 
-  // Eliminar una carrera ya registrada: sale del total y del conteo; su tiempo pasa a espera.
-  const deleteTrip = useCallback(
-    (id: string) => {
-      commitShift((prev) => ({
-        ...prev,
-        segments: prev.segments.map((s) =>
-          s.id === id ? { ...s, kind: 'wait' as const, amount: undefined } : s,
-        ),
-      }))
-      setTripMenu(null)
-    },
-    [commitShift],
-  )
-
-  const editTripAmount = useCallback(
-    (id: string, amount: number) => {
-      commitShift((prev) => ({
-        ...prev,
-        segments: prev.segments.map((s) => (s.id === id ? { ...s, amount } : s)),
-      }))
-    },
-    [commitShift],
-  )
+  const editTripAmount = useCallback((id: string, amount: number) => {
+    commitShift((prev) => ({ ...prev, segments: prev.segments.map((s) => s.id === id ? { ...s, amount } : s) }))
+  }, [commitShift])
 
   function openTripEditor(trip: Segment) {
-    setEditingTripId(trip.id)
-    setKeypadInitial(trip.amount != null ? String(trip.amount) : '')
-    setTripMenu(null)
-    setKeypad('trip')
+    setEditingTripId(trip.id); setKeypadInitial(trip.amount != null ? String(trip.amount) : '')
+    setTripMenu(null); setKeypad('trip')
   }
 
   function rememberLabel(label: string) {
-    const next = mergeExpenseLabels(labelsRef.current, [label])
-    labelsRef.current = next
-    setExpenseLabels(next)
-    persistLabels(next)
+    const known = EXPENSE_LABELS as readonly string[]
+    if (!known.includes(label) && !expenseLabels.includes(label))
+      setExpenseLabels((prev) => [...prev, label])
   }
 
   function handleKeypadSubmit(amount: number, label?: string) {
     if (keypad === 'trip') {
-      if (editingTripId) {
-        editTripAmount(editingTripId, amount)
-      } else {
-        switchSegment('wait', amount)
-      }
+      if (editingTripId) editTripAmount(editingTripId, amount); else switchSegment('wait', amount)
     } else {
-      const expenseLabel = label?.trim() || 'Otro'
-      rememberLabel(expenseLabel)
-      commitShift((prev) => ({
-        ...prev,
-        expenses: [...prev.expenses, { id: uid(), label: expenseLabel, amount, at: Date.now() }],
-      }))
+      const l = label?.trim() || 'Otro'; rememberLabel(l)
+      commitShift((prev) => ({ ...prev, expenses: [...prev.expenses, { id: uid(), label: l, amount, at: Date.now() }] }))
     }
     closeKeypad()
   }
 
-  function closeKeypad() {
-    setKeypad(null)
-    setEditingTripId(null)
-    setKeypadInitial('')
-  }
+  function closeKeypad() { setKeypad(null); setEditingTripId(null); setKeypadInitial('') }
 
-  function saveConfig(config: ShiftConfig) {
-    persistConfig(config)
-    commitShift((prev) => ({ ...prev, config }))
-    setPlanOpen(false)
-  }
-
-  function startNewShift() {
-    commitShift(() => ({ ...initialShift, config: shift.config }), true)
-  }
-
-  if (now === null) {
-    return (
-      <div className="flex min-h-dvh flex-col bg-background">
-        <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 pt-6 pb-4">
-          <div className="h-16 animate-pulse rounded-lg bg-muted/40" />
-          <div className="h-56 animate-pulse rounded-3xl bg-muted/40" />
-          <div className="h-24 animate-pulse rounded-2xl bg-muted/30" />
-          <span className="sr-only">Cargando tu turno</span>
-        </main>
-      </div>
-    )
-  }
+  // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   if (shift.status === 'ended') {
     return (
       <>
-        <ShiftSummary
-          stats={stats}
-          config={shift.config}
-          onNewShift={() => {
-            startNewShift()
-            setView('shift')
-          }}
-          onOpenHistory={() => setHistoryOpen(true)}
-          onBackToGPS={() => {
-            startNewShift()
-            setView('gps')
-          }}
-        />
-        <PlanSheet
-          open={planOpen}
-          config={shift.config}
-          onClose={() => setPlanOpen(false)}
-          onSave={saveConfig}
-        />
+        <ShiftSummary stats={stats} config={shift.config} onOpenHistory={() => setHistoryOpen(true)}
+          onNewShift={() => { resetShift(); setView('shift') }}
+          onBackToGPS={gpsConfig?.setupComplete ? () => { startNewShift(); setView('gps') } : undefined} />
+        <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
         <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
       </>
     )
   }
 
-  // ─── GPS HOME ───────────────────────────────────────────────────────────────
   if (view === 'gps' && gpsConfig?.setupComplete) {
-    const shiftIsRunning = shift.status === 'running'
+    const shiftRunning = shift.status === 'running'
     return (
       <div className="flex min-h-dvh flex-col bg-background">
-        <GPSHome
-          gpsConfig={gpsConfig}
-          history={history}
-          onStartShift={() => {
-            if (!shiftIsRunning) startShift()
-            setView('shift')
-          }}
-          onOpenSetup={() => setGpsSetupOpen(true)}
-          onOpenHistory={() => setHistoryOpen(true)}
-          shiftActive={shiftIsRunning}
-        />
-
+        <GPSHome gpsConfig={gpsConfig} history={history} shiftActive={shiftRunning}
+          onStartShift={() => { if (!shiftRunning) startShift(); setView('shift') }}
+          onOpenSetup={() => setGpsSetupOpen(true)} onOpenHistory={() => setHistoryOpen(true)} />
         <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
-        <GPSSetupSheet
-          open={gpsSetupOpen}
-          config={gpsConfig}
-          onClose={() => setGpsSetupOpen(false)}
-          onSave={handleSaveGPS}
-        />
+        <GPSSetupSheet open={gpsSetupOpen} config={gpsConfig} onClose={() => setGpsSetupOpen(false)} onSave={handleSaveGPS} />
       </div>
     )
   }
 
-  // ─── SHIFT MODE ─────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 pt-6 pb-4">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground">
-            {shortDateLabel(toDateString(now))}
-          </span>
+          <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground">{shortDateLabel(toDateString(now))}</span>
           <div className="flex items-center gap-1.5">
             {gpsConfig?.setupComplete ? (
-              <button
-                type="button"
-                onClick={() => setView('gps')}
-                aria-label="Ver GPS Financiero"
-                className="flex items-center gap-1.5 rounded-full bg-[#a855f7]/15 px-3 py-1.5 font-mono text-[11px] tracking-wide text-[#a855f7] transition-colors hover:bg-[#a855f7]/25"
-              >
-                <TrendingUp className="size-3.5" aria-hidden="true" />
-                GPS
-              </button>
+              <button type="button" onClick={() => setView('gps')}
+                className="flex items-center gap-1.5 rounded-full bg-[#a855f7]/15 px-3 py-1.5 font-mono text-[11px] tracking-wide text-[#a855f7] hover:bg-[#a855f7]/25">
+                <TrendingUp className="size-3.5" /> GPS</button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(true)}
-              aria-label="Ver historial"
-              className="flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 font-mono text-[11px] tracking-wide text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <History className="size-3.5" aria-hidden="true" />
-              HISTORIAL
-            </button>
+            <button type="button" onClick={() => setHistoryOpen(true)}
+              className="flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 font-mono text-[11px] tracking-wide text-muted-foreground hover:text-foreground">
+              <History className="size-3.5" /> HISTORIAL</button>
           </div>
         </div>
         <ShiftTopbar stats={stats} goal={shift.config.goal} endTime={shift.config.endTime} />
         <HeroSignal stats={stats} goal={shift.config.goal} onCancelTrip={cancelCurrentTrip} />
-        <TripList
-          trips={stats.trips}
-          earnings={stats.earnings}
-          onSelectTrip={(trip, index) => setTripMenu({ trip, index })}
-        />
-        <ExpenseStrip
-          expenses={shift.expenses}
-          total={stats.expensesTotal}
-          onAdd={() => setKeypad('expense')}
-          disabled={shift.status !== 'running'}
-        />
+        <TripList trips={stats.trips} earnings={stats.earnings} onSelectTrip={(t, i) => setTripMenu({ trip: t, index: i })} />
+        <ExpenseStrip expenses={shift.expenses} total={stats.expensesTotal} onAdd={() => setKeypad('expense')} />
       </main>
-
       <div className="sticky bottom-0 mx-auto w-full max-w-md">
-        <ActionBar
-          status={shift.status}
-          stats={stats}
-          onStartShift={() => {
-            startShift()
-            setView('shift')
-          }}
-          onStartTrip={() => switchSegment('trip')}
-          onEndTrip={() => setKeypad('trip')}
-          onTogglePause={togglePause}
-          onEndShift={endShift}
-          onOpenSettings={() => setPlanOpen(true)}
-        />
+        <ActionBar status={shift.status} stats={stats}
+          onStartShift={() => { startShift(); setView('shift') }}
+          onStartTrip={() => switchSegment('trip')} onEndTrip={() => setKeypad('trip')}
+          onTogglePause={togglePause} onEndShift={endShift} onOpenSettings={() => setPlanOpen(true)} />
       </div>
-
-      <KeypadSheet
-        mode={keypad}
-        labels={expenseLabels}
-        initialValue={keypadInitial}
-        title={
-          keypad === 'trip'
-            ? editingTripId
-              ? 'Corregir el monto'
-              : '¿Cuánto cobraste?'
-            : 'Nuevo gasto'
-        }
-        subtitle={
-          keypad === 'trip'
-            ? editingTripId
-              ? 'Escribe el monto correcto de esta carrera.'
-              : 'Cierra la carrera con el monto real recibido.'
-            : 'Se resta del neto del día.'
-        }
+      <KeypadSheet mode={keypad} labels={expenseLabels} initialValue={keypadInitial}
+        title={keypad === 'trip' ? (editingTripId ? 'Corregir el monto' : '¿Cuánto cobraste?') : 'Nuevo gasto'}
+        subtitle={keypad === 'trip' ? (editingTripId ? 'Escribe el monto correcto.' : 'Cierra la carrera con el monto real.') : 'Se resta del neto del día.'}
         submitLabel={keypad === 'trip' && editingTripId ? 'Guardar monto' : undefined}
-        onClose={closeKeypad}
-        onSubmit={handleKeypadSubmit}
-      />
-
-      <TripActionSheet
-        trip={tripMenu?.trip ?? null}
-        index={tripMenu?.index ?? null}
-        onEdit={openTripEditor}
-        onDelete={(trip) => deleteTrip(trip.id)}
-        onClose={() => setTripMenu(null)}
-      />
-
-      <PlanSheet
-        open={planOpen}
-        config={shift.config}
-        onClose={() => setPlanOpen(false)}
-        onSave={saveConfig}
-      />
-
+        onClose={closeKeypad} onSubmit={handleKeypadSubmit} />
+      <TripActionSheet trip={tripMenu?.trip ?? null} index={tripMenu?.index ?? null}
+        onEdit={openTripEditor} onDelete={(t) => deleteTrip(t.id)} onClose={() => setTripMenu(null)} />
+      <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
       <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
-
-      {gpsConfig ? (
-        <GPSSetupSheet
-          open={gpsSetupOpen}
-          config={gpsConfig}
-          onClose={() => setGpsSetupOpen(false)}
-          onSave={handleSaveGPS}
-        />
-      ) : null}
+      {gpsConfig ? <GPSSetupSheet open={gpsSetupOpen} config={gpsConfig} onClose={() => setGpsSetupOpen(false)} onSave={handleSaveGPS} /> : null}
     </div>
   )
 }

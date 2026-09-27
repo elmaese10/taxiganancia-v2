@@ -49,7 +49,7 @@ export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackT
         <button type="button" onClick={onNewShift}
           className={cn('flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-medium',
             onBackToGPS ? 'bg-card text-muted-foreground' : 'bg-primary py-4 text-base font-semibold text-primary-foreground')}>
-          <RotateCcw className="size-4" /> Empezar un turno nuevo</button>
+          <RotateCcw className="size-4" /> Resetear turno</button>
         {onOpenHistory ? <button type="button" onClick={onOpenHistory}
           className="flex items-center justify-center gap-2 rounded-xl bg-card py-3.5 text-sm font-medium text-muted-foreground">
           <History className="size-4" /> Ver historial</button> : null}
