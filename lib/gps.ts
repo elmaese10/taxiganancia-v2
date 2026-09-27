@@ -74,7 +74,7 @@ function obligationFallsOn(ob: Obligation, d: Date): boolean {
   return freq === 'monthly' ? d.getDate() === ob.dueDay : d.getDay() === ob.dueDay
 }
 
-export function buildCalendar(config: GPSConfig, history: ClosedDay[], count = 7, now = new Date()) {
+export function buildCalendar(config: GPSConfig, history: ClosedDay[], _count = 7, now = new Date()) {
   const relevant = history.filter((c) => c.endedAt > config.setupAt)
   const actualByDate = new Map<string, number>()
   for (const c of relevant) actualByDate.set(c.date, (actualByDate.get(c.date) ?? 0) + c.net)
@@ -84,22 +84,50 @@ export function buildCalendar(config: GPSConfig, history: ClosedDay[], count = 7
   for (const c of relevant) totalNets += c.net
   const balance = config.initialBalance + totalNets
 
+  // Lunes de esta semana
+  const monday = new Date(now)
+  const dow = monday.getDay()
+  const diff = dow === 0 ? -6 : 1 - dow
+  monday.setDate(monday.getDate() + diff)
+  monday.setHours(0, 0, 0, 0)
+
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
   const todayKey = dateKey(now)
-  let running = balance
+
+  // Restar del balance los netos de esta semana que ya están incluidos,
+  // para poder sumarlos fila por fila sin contar doble
+  let weekNetsAlready = 0
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    if (d.getTime() <= todayStart.getTime()) {
+      const a = actualByDate.get(dateKey(d))
+      if (a !== undefined) weekNetsAlready += a
+    }
+  }
+  let running = balance - weekNetsAlready
+
   const days: CalDay[] = []
 
-  for (let i = 0; i < count; i++) {
-    const d = new Date(now); d.setDate(now.getDate() + i)
-    const key = dateKey(d); const isToday = key === todayKey
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    const key = dateKey(d)
+    const isToday = key === todayKey
+    const isPast = d.getTime() < todayStart.getTime()
+
     const actual = actualByDate.get(key)
-    const dayNet = i === 0 ? 0 : (actual ?? avgDaily)
-    if (i > 0) running += dayNet
+    const dayNet = isPast || isToday ? (actual ?? 0) : avgDaily
+
+    running += dayNet
     const balanceAfterIncome = running
 
     const obs: { name: string; amount: number }[] = []
     for (const ob of config.obligations) {
-      if (obligationFallsOn(ob, d) && i > 0) {
-        obs.push({ name: ob.name, amount: ob.amount }); running -= ob.amount
+      if (obligationFallsOn(ob, d)) {
+        obs.push({ name: ob.name, amount: ob.amount })
+        running -= ob.amount
       }
     }
     days.push({ date: d, key, label: `${CAL_DIAS[d.getDay()]} ${d.getDate()}`,
