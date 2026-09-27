@@ -14,7 +14,7 @@ import { ShiftSummary } from '@/components/shift-summary'
 import { ShiftTopbar } from '@/components/shift-topbar'
 import { TripActionSheet } from '@/components/trip-action-sheet'
 import { TripList } from '@/components/trip-list'
-import { loadGPS, saveGPS, type GPSConfig } from '@/lib/gps'
+import { DEFAULT_GPS, loadGPS, saveGPS, type GPSConfig } from '@/lib/gps'
 import { shortDateLabel, toDateString } from '@/lib/history-stats'
 import {
   computeStats,
@@ -34,7 +34,7 @@ export default function Home() {
   const [planOpen, setPlanOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<ClosedDay[]>([])
-  const [gpsConfig, setGpsConfig] = useState<GPSConfig | null>(null)
+  const [gpsConfig, setGpsConfig] = useState<GPSConfig>(DEFAULT_GPS)
   const [gpsSetupOpen, setGpsSetupOpen] = useState(false)
   const [view, setView] = useState<'gps' | 'shift'>('gps')
   const [tripMenu, setTripMenu] = useState<{ trip: Segment; index: number } | null>(null)
@@ -108,15 +108,11 @@ export default function Home() {
     commitShift(() => ({ ...initialShift }), true)
   }, [commitShift])
 
-  /** Resetea el turno actual descartando todo sin guardar en historial. */
+  /** Resetea el turno actual descartando todo sin guardar en historial. Vuelve a estado "listo". */
   const resetShift = useCallback(() => {
-    const at = Date.now()
-    setNow(at)
+    setNow(Date.now())
     commitShift(() => ({
       ...initialShift,
-      status: 'running' as const,
-      startedAt: at,
-      segments: [{ id: uid(), kind: 'wait' as const, start: at, end: null }],
       config: shift.config, // mantiene la configuración actual (meta, hora fin)
     }), true)
   }, [commitShift, shift.config])
@@ -174,7 +170,7 @@ export default function Home() {
     return (
       <>
         <ShiftSummary stats={stats} config={shift.config} onOpenHistory={() => setHistoryOpen(true)}
-          onNewShift={() => { resetShift(); setView('shift') }}
+          onNewShift={() => { resetShift(); setView(gpsConfig?.setupComplete ? 'gps' : 'shift') }}
           onBackToGPS={gpsConfig?.setupComplete ? () => { startNewShift(); setView('gps') } : undefined} />
         <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
         <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
@@ -212,6 +208,18 @@ export default function Home() {
           </div>
         </div>
         <ShiftTopbar stats={stats} goal={shift.config.goal} endTime={shift.config.endTime} />
+
+        {gpsConfig && !gpsConfig.setupComplete ? (
+          <button type="button" onClick={() => setGpsSetupOpen(true)}
+            className="flex items-center gap-3 rounded-2xl border border-dashed border-[#a855f7]/30 bg-[#a855f7]/5 p-4 text-left hover:border-[#a855f7]/50">
+            <TrendingUp className="size-6 shrink-0 text-[#a855f7]" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-semibold text-foreground">Activa tu GPS Financiero</span>
+              <span className="text-xs text-muted-foreground">Conecta tu turno diario con tus obligaciones. Ve si llegas o no a cada pago.</span>
+            </div>
+          </button>
+        ) : null}
+
         <HeroSignal stats={stats} goal={shift.config.goal} onCancelTrip={cancelCurrentTrip} />
         <TripList trips={stats.trips} earnings={stats.earnings} onSelectTrip={(t, i) => setTripMenu({ trip: t, index: i })} />
         <ExpenseStrip expenses={shift.expenses} total={stats.expensesTotal} onAdd={() => setKeypad('expense')} />
@@ -231,7 +239,7 @@ export default function Home() {
         onEdit={openTripEditor} onDelete={(t) => deleteTrip(t.id)} onClose={() => setTripMenu(null)} />
       <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
       <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
-      {gpsConfig ? <GPSSetupSheet open={gpsSetupOpen} config={gpsConfig} onClose={() => setGpsSetupOpen(false)} onSave={handleSaveGPS} /> : null}
+      <GPSSetupSheet open={gpsSetupOpen} config={gpsConfig} onClose={() => setGpsSetupOpen(false)} onSave={handleSaveGPS} />
     </div>
   )
 }
