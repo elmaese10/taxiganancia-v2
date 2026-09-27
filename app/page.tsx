@@ -197,28 +197,15 @@ export default function Home() {
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground">{shortDateLabel(toDateString(now))}</span>
           <div className="flex items-center gap-1.5">
-            {gpsConfig?.setupComplete ? (
-              <button type="button" onClick={() => setView('gps')}
-                className="flex items-center gap-1.5 rounded-full bg-[#a855f7]/15 px-3 py-1.5 font-mono text-[11px] tracking-wide text-[#a855f7] hover:bg-[#a855f7]/25">
-                <TrendingUp className="size-3.5" /> GPS</button>
-            ) : null}
+            <button type="button" onClick={() => gpsConfig.setupComplete ? setView('gps') : setGpsSetupOpen(true)}
+              className="flex items-center gap-1.5 rounded-full bg-[#a855f7]/15 px-3 py-1.5 font-mono text-[11px] tracking-wide text-[#a855f7] hover:bg-[#a855f7]/25">
+              <TrendingUp className="size-3.5" /> GPS</button>
             <button type="button" onClick={() => setHistoryOpen(true)}
               className="flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 font-mono text-[11px] tracking-wide text-muted-foreground hover:text-foreground">
               <History className="size-3.5" /> HISTORIAL</button>
           </div>
         </div>
         <ShiftTopbar stats={stats} goal={shift.config.goal} endTime={shift.config.endTime} />
-
-        {gpsConfig && !gpsConfig.setupComplete ? (
-          <button type="button" onClick={() => setGpsSetupOpen(true)}
-            className="flex items-center gap-3 rounded-2xl border border-dashed border-[#a855f7]/30 bg-[#a855f7]/5 p-4 text-left hover:border-[#a855f7]/50">
-            <TrendingUp className="size-6 shrink-0 text-[#a855f7]" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-semibold text-foreground">Activa tu GPS Financiero</span>
-              <span className="text-xs text-muted-foreground">Conecta tu turno diario con tus obligaciones. Ve si llegas o no a cada pago.</span>
-            </div>
-          </button>
-        ) : null}
 
         <HeroSignal stats={stats} goal={shift.config.goal} onCancelTrip={cancelCurrentTrip} />
         <TripList trips={stats.trips} earnings={stats.earnings} onSelectTrip={(t, i) => setTripMenu({ trip: t, index: i })} />
