@@ -1,11 +1,11 @@
 'use client'
-import { History, RotateCcw, TrendingUp } from 'lucide-react'
+import { ArrowLeft, History, RotateCcw, TrendingUp } from 'lucide-react'
 import { fmtHM, fmtRate, fmtSoles, type ShiftConfig, type ShiftStats } from '@/lib/shift'
 import { cn } from '@/lib/utils'
-interface ShiftSummaryProps { stats: ShiftStats; config: ShiftConfig; onNewShift: () => void; onOpenHistory?: () => void; onBackToGPS?: () => void }
-export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackToGPS }: ShiftSummaryProps) {
+interface ShiftSummaryProps { stats: ShiftStats; config: ShiftConfig; onNewShift: () => void; onOpenHistory?: () => void; onBackToGPS?: () => void; onReopen?: () => void }
+export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackToGPS, onReopen }: ShiftSummaryProps) {
   const goalMet = stats.net >= config.goal; const netNeg = stats.net < 0
-  const wasted = stats.waitSeconds + stats.pauseSeconds; const productive = stats.tripSeconds + wasted
+  const wasted = stats.waitSeconds; const productive = stats.tripSeconds + wasted
   const tripShare = productive > 0 ? Math.round((stats.tripSeconds / productive) * 100) : 0
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-8">
@@ -46,6 +46,9 @@ export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackT
         {onBackToGPS ? <button type="button" onClick={onBackToGPS}
           className="flex items-center justify-center gap-2 rounded-xl bg-primary py-4 text-base font-semibold text-primary-foreground">
           <TrendingUp className="size-5" /> Ver mi GPS Financiero</button> : null}
+        {onReopen ? <button type="button" onClick={onReopen}
+          className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 py-3.5 text-sm font-semibold text-warning">
+          <ArrowLeft className="size-4" /> Volver al turno (seguir con las carreras)</button> : null}
         <button type="button" onClick={onNewShift}
           className={cn('flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-medium',
             onBackToGPS ? 'bg-card text-muted-foreground' : 'bg-primary py-4 text-base font-semibold text-primary-foreground')}>

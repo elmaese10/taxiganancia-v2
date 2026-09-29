@@ -25,7 +25,7 @@ import {
   type ShiftConfig,
   type ShiftState,
 } from '@/lib/shift'
-import { type ClosedDay, enablePersistence, loadPersisted, persistShift, closedDayFromShift, appendClosedDay } from '@/lib/storage'
+import { type ClosedDay, enablePersistence, loadPersisted, persistHistory, persistShift, closedDayFromShift, appendClosedDay } from '@/lib/storage'
 
 export default function Home() {
   const [shift, setShift] = useState<ShiftState>(initialShift)
@@ -42,12 +42,27 @@ export default function Home() {
   const [keypadInitial, setKeypadInitial] = useState('')
   const [expenseLabels, setExpenseLabels] = useState<string[]>([...EXPENSE_LABELS])
 
+  const historyRef = useRef<ClosedDay[]>([])
+  /** Única puerta para cambiar el historial: actualiza pantalla Y lo guarda en el celular. */
+  const applyHistory = useCallback((next: ClosedDay[]) => {
+    historyRef.current = next
+    setHistory(next)
+    persistHistory(next)
+  }, [])
+
   const loadedRef = useRef(false)
   useLayoutEffect(() => {
     if (loadedRef.current) return; loadedRef.current = true
     loadPersisted().then((persisted) => {
-      setShift(persisted.shift); setHistory(persisted.history); setGpsConfig(loadGPS())
+      setShift(persisted.shift); setGpsConfig(loadGPS())
+      let hist = persisted.history
+      if (persisted.shift.status === 'ended' && persisted.shift.endedAt) {
+        // Si el turno quedó cerrado pero su día no llegó al historial, se recupera aquí.
+        hist = appendClosedDay(hist, closedDayFromShift(persisted.shift, persisted.shift.endedAt))
+      }
+      historyRef.current = hist; setHistory(hist)
       enablePersistence(); setNow(Date.now())
+      if (hist !== persisted.history) persistHistory(hist)
       if (persisted.shift.status === 'running') setView('shift')
     })
   }, [])
@@ -99,10 +114,10 @@ export default function Home() {
       const segments = prev.segments.map((s) => s.end === null ? { ...s, end: at } : s)
       const ended = { ...prev, status: 'ended' as const, endedAt: at, segments }
       const closed = closedDayFromShift(ended, at)
-      setHistory((h) => appendClosedDay(h, closed))
+      applyHistory(appendClosedDay(historyRef.current, closed))
       return ended
     })
-  }, [commitShift])
+  }, [commitShift, applyHistory])
 
   const startNewShift = useCallback(() => {
     commitShift(() => ({ ...initialShift }), true)
@@ -116,6 +131,19 @@ export default function Home() {
       config: shift.config, // mantiene la configuración actual (meta, hora fin)
     }), true)
   }, [commitShift, shift.config])
+
+  /** Vuelve a las carreras: quita el cierre del historial y deja el turno en PAUSA para que decidas cuándo seguir. */
+  const reopenShift = useCallback(() => {
+    const at = Date.now(); setNow(at)
+    commitShift((prev) => {
+      if (prev.status !== 'ended') return prev
+      const closedId = `${prev.endedAt}-${prev.startedAt ?? 'na'}`
+      applyHistory(historyRef.current.filter((d) => d.id !== closedId))
+      return { ...prev, status: 'running' as const, endedAt: null,
+        segments: [...prev.segments, { id: uid(), kind: 'pause' as const, start: at, end: null }] }
+    })
+    setView('shift')
+  }, [commitShift, applyHistory])
 
   const togglePause = useCallback(() => {
     switchSegment(stats.current?.kind === 'pause' ? 'wait' : 'pause')
@@ -170,6 +198,7 @@ export default function Home() {
     return (
       <>
         <ShiftSummary stats={stats} config={shift.config} onOpenHistory={() => setHistoryOpen(true)}
+          onReopen={shift.endedAt != null && toDateString(shift.endedAt) === toDateString(Date.now()) ? reopenShift : undefined}
           onNewShift={() => { resetShift(); setView(gpsConfig?.setupComplete ? 'gps' : 'shift') }}
           onBackToGPS={gpsConfig?.setupComplete ? () => { startNewShift(); setView('gps') } : undefined} />
         <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
