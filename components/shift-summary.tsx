@@ -1,16 +1,19 @@
 'use client'
-import { ArrowLeft, History, RotateCcw, TrendingUp } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, Check, History, RotateCcw, TrendingUp } from 'lucide-react'
 import { fmtHM, fmtRate, fmtSoles, type ShiftConfig, type ShiftStats } from '@/lib/shift'
 import { cn } from '@/lib/utils'
-interface ShiftSummaryProps { stats: ShiftStats; config: ShiftConfig; onNewShift: () => void; onOpenHistory?: () => void; onBackToGPS?: () => void; onReopen?: () => void }
-export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackToGPS, onReopen }: ShiftSummaryProps) {
+interface ShiftSummaryProps { stats: ShiftStats; config: ShiftConfig; pending: boolean; onConfirm: () => void; onNewShift: () => void; onOpenHistory?: () => void; onBackToGPS?: () => void; onReopen?: () => void }
+export function ShiftSummary({ stats, config, pending, onConfirm, onNewShift, onOpenHistory, onBackToGPS, onReopen }: ShiftSummaryProps) {
+  const [confirmingReset, setConfirmingReset] = useState(false)
   const goalMet = stats.net >= config.goal; const netNeg = stats.net < 0
   const wasted = stats.waitSeconds; const productive = stats.tripSeconds + wasted
   const tripShare = productive > 0 ? Math.round((stats.tripSeconds / productive) * 100) : 0
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-8">
       <header className="flex flex-col gap-1">
-        <p className="font-mono text-xs tracking-[0.18em] text-muted-foreground">RESUMEN DEL TURNO</p>
+        <p className={cn('font-mono text-xs tracking-[0.18em]', pending ? 'text-warning' : 'text-muted-foreground')}>
+          {pending ? 'RESUMEN · TURNO SIN CERRAR' : 'RESUMEN DEL TURNO'}</p>
         <h1 className={cn('font-mono text-5xl leading-none font-semibold tabular-nums',
           netNeg ? 'text-destructive' : goalMet ? 'text-primary glow-primary' : 'text-warning glow-warning')}>
           {fmtSoles(stats.net, 0)}</h1>
@@ -43,19 +46,38 @@ export function ShiftSummary({ stats, config, onNewShift, onOpenHistory, onBackT
           <span className="font-mono text-base font-semibold tabular-nums text-foreground">{r.value}</span></div>))}
       </section>
       <div className="flex flex-col gap-2">
-        {onBackToGPS ? <button type="button" onClick={onBackToGPS}
-          className="flex items-center justify-center gap-2 rounded-xl bg-primary py-4 text-base font-semibold text-primary-foreground">
-          <TrendingUp className="size-5" /> Ver mi GPS Financiero</button> : null}
-        {onReopen ? <button type="button" onClick={onReopen}
-          className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 py-3.5 text-sm font-semibold text-warning">
-          <ArrowLeft className="size-4" /> Volver al turno (seguir con las carreras)</button> : null}
-        <button type="button" onClick={onNewShift}
-          className={cn('flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-medium',
-            onBackToGPS ? 'bg-card text-muted-foreground' : 'bg-primary py-4 text-base font-semibold text-primary-foreground')}>
-          <RotateCcw className="size-4" /> Resetear turno</button>
-        {onOpenHistory ? <button type="button" onClick={onOpenHistory}
-          className="flex items-center justify-center gap-2 rounded-xl bg-card py-3.5 text-sm font-medium text-muted-foreground">
-          <History className="size-4" /> Ver historial</button> : null}
+        {confirmingReset ? (
+          <div className="flex flex-col gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4">
+            <p className="text-base font-semibold text-foreground">¿Borrar este turno?</p>
+            <p className="text-sm text-muted-foreground text-pretty">
+              Se descartan las carreras y los gastos de este turno{pending ? '' : ' y se quita el día del historial'}. No se puede deshacer.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setConfirmingReset(false)}
+                className="flex-1 rounded-xl bg-card py-3 text-sm font-medium text-muted-foreground">Cancelar</button>
+              <button type="button" onClick={() => { setConfirmingReset(false); onNewShift() }}
+                className="flex-1 rounded-xl bg-destructive py-3 text-sm font-semibold text-white">Sí, borrar</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {pending ? <button type="button" onClick={onConfirm}
+              className="flex items-center justify-center gap-2 rounded-xl bg-primary py-4 text-base font-semibold text-primary-foreground">
+              <Check className="size-5" /> Cerrar turno</button>
+            : onBackToGPS ? <button type="button" onClick={onBackToGPS}
+              className="flex items-center justify-center gap-2 rounded-xl bg-primary py-4 text-base font-semibold text-primary-foreground">
+              <TrendingUp className="size-5" /> Ver mi GPS Financiero</button> : null}
+            {onReopen ? <button type="button" onClick={onReopen}
+              className="flex items-center justify-center gap-2 rounded-xl bg-warning/15 py-3.5 text-sm font-semibold text-warning">
+              <ArrowLeft className="size-4" /> Volver al turno (seguir con las carreras)</button> : null}
+            <button type="button" onClick={() => setConfirmingReset(true)}
+              className={cn('flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-medium',
+                pending || onBackToGPS ? 'bg-card text-muted-foreground' : 'bg-primary py-4 text-base font-semibold text-primary-foreground')}>
+              <RotateCcw className="size-4" /> Resetear turno</button>
+            {onOpenHistory ? <button type="button" onClick={onOpenHistory}
+              className="flex items-center justify-center gap-2 rounded-xl bg-card py-3.5 text-sm font-medium text-muted-foreground">
+              <History className="size-4" /> Ver historial</button> : null}
+          </>
+        )}
       </div>
     </main>
   )

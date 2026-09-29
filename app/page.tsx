@@ -55,14 +55,8 @@ export default function Home() {
     if (loadedRef.current) return; loadedRef.current = true
     loadPersisted().then((persisted) => {
       setShift(persisted.shift); setGpsConfig(loadGPS())
-      let hist = persisted.history
-      if (persisted.shift.status === 'ended' && persisted.shift.endedAt) {
-        // Si el turno quedó cerrado pero su día no llegó al historial, se recupera aquí.
-        hist = appendClosedDay(hist, closedDayFromShift(persisted.shift, persisted.shift.endedAt))
-      }
-      historyRef.current = hist; setHistory(hist)
+      historyRef.current = persisted.history; setHistory(persisted.history)
       enablePersistence(); setNow(Date.now())
-      if (hist !== persisted.history) persistHistory(hist)
       if (persisted.shift.status === 'running') setView('shift')
     })
   }, [])
@@ -105,19 +99,27 @@ export default function Home() {
   const startShift = useCallback(() => {
     const at = Date.now(); setNow(at)
     commitShift((prev) => ({ ...prev, status: 'running', startedAt: at, endedAt: null,
-      segments: [{ id: uid(), kind: 'wait', start: at, end: null }], expenses: [] }))
+      segments: [{ id: uid(), kind: 'wait', start: at, end: null }] }))
   }, [commitShift])
 
   const endShift = useCallback(() => {
     const at = Date.now(); setNow(at)
     commitShift((prev) => {
       const segments = prev.segments.map((s) => s.end === null ? { ...s, end: at } : s)
-      const ended = { ...prev, status: 'ended' as const, endedAt: at, segments }
-      const closed = closedDayFromShift(ended, at)
-      applyHistory(appendClosedDay(historyRef.current, closed))
-      return ended
+      return { ...prev, status: 'ended' as const, endedAt: at, segments }
     })
-  }, [commitShift, applyHistory])
+  }, [commitShift])
+
+  /** Identificador con el que el día de este turno se guarda (o se guardaría) en el historial. */
+  const closedIdOf = (sh: ShiftState) => `${sh.endedAt}-${sh.startedAt ?? 'na'}`
+
+  /** Paso 2: "Cerrar turno". Recién aquí el día entra al historial y se vuelve al GPS. */
+  const confirmShift = useCallback(() => {
+    if (shift.status !== 'ended' || shift.endedAt == null) return
+    applyHistory(appendClosedDay(historyRef.current, closedDayFromShift(shift, shift.endedAt)))
+    commitShift(() => ({ ...initialShift }), true)
+    setView(gpsConfig.setupComplete ? 'gps' : 'shift')
+  }, [shift, gpsConfig.setupComplete, applyHistory, commitShift])
 
   const startNewShift = useCallback(() => {
     commitShift(() => ({ ...initialShift }), true)
@@ -126,18 +128,24 @@ export default function Home() {
   /** Resetea el turno actual descartando todo sin guardar en historial. Vuelve a estado "listo". */
   const resetShift = useCallback(() => {
     setNow(Date.now())
+    if (shift.status === 'ended' && shift.endedAt != null) {
+      const id = closedIdOf(shift)
+      if (historyRef.current.some((d) => d.id === id)) {
+        applyHistory(historyRef.current.filter((d) => d.id !== id))
+      }
+    }
     commitShift(() => ({
       ...initialShift,
       config: shift.config, // mantiene la configuración actual (meta, hora fin)
     }), true)
-  }, [commitShift, shift.config])
+  }, [commitShift, shift, applyHistory])
 
   /** Vuelve a las carreras: quita el cierre del historial y deja el turno en PAUSA para que decidas cuándo seguir. */
   const reopenShift = useCallback(() => {
     const at = Date.now(); setNow(at)
     commitShift((prev) => {
       if (prev.status !== 'ended') return prev
-      const closedId = `${prev.endedAt}-${prev.startedAt ?? 'na'}`
+      const closedId = closedIdOf(prev)
       applyHistory(historyRef.current.filter((d) => d.id !== closedId))
       return { ...prev, status: 'running' as const, endedAt: null,
         segments: [...prev.segments, { id: uid(), kind: 'pause' as const, start: at, end: null }] }
@@ -195,12 +203,15 @@ export default function Home() {
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   if (shift.status === 'ended') {
+    const saved = history.some((d) => d.id === closedIdOf(shift))
+    const closedToday = shift.endedAt != null && toDateString(shift.endedAt) === toDateString(Date.now())
     return (
       <>
-        <ShiftSummary stats={stats} config={shift.config} onOpenHistory={() => setHistoryOpen(true)}
-          onReopen={shift.endedAt != null && toDateString(shift.endedAt) === toDateString(Date.now()) ? reopenShift : undefined}
+        <ShiftSummary stats={stats} config={shift.config} pending={!saved} onConfirm={confirmShift}
+          onOpenHistory={() => setHistoryOpen(true)}
+          onReopen={!saved || closedToday ? reopenShift : undefined}
           onNewShift={() => { resetShift(); setView(gpsConfig?.setupComplete ? 'gps' : 'shift') }}
-          onBackToGPS={gpsConfig?.setupComplete ? () => { startNewShift(); setView('gps') } : undefined} />
+          onBackToGPS={saved && gpsConfig?.setupComplete ? () => { startNewShift(); setView('gps') } : undefined} />
         <PlanSheet open={planOpen} config={shift.config} onClose={() => setPlanOpen(false)} onSave={saveConfig} />
         <HistorySheet open={historyOpen} history={history} onClose={() => setHistoryOpen(false)} />
       </>
